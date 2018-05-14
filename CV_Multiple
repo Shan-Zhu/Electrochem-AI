@@ -1,0 +1,73 @@
+# 功能预期：一个CV的txt文件，直接扔进程序，自动计算出“电压窗口，圈数，Q充，Q放, Capacitance”
+import numpy as np
+import pandas as pd
+import sklearn as sk
+import os
+import csv
+from scipy import integrate
+import matplotlib
+import matplotlib.pyplot as plt
+
+# input data
+data=pd.read_csv('EISML/CVdata/CVdata_csv/500-5mv.csv',sep=';')
+I_mA=data['<I>/mA'][:,np.newaxis]
+E_V=data['Ewe/V'][:,np.newaxis]
+
+#画出所有CV
+def CV_plot_all():
+    fig, ax = plt.subplots()
+    ax.plot(E_V,I_mA)
+    plt.show()
+
+#voltage window
+def Voltage_window():
+    Voltage_window=np.max(E_V)-np.min(E_V) #计算电压窗口
+    return round(np.max(E_V),1), round(np.min(E_V),1),round(Voltage_window,1)  #打印电压窗口，并保留3位小数
+
+#圈数和正拐点
+def Turnpoint():
+    Turnpoint_array=[]
+    for i_po in range (len(I_mA)-1):
+        if I_mA[i_po]>=0.0 and I_mA[i_po+1]<0.0: #正拐点
+            Turnpoint_array.append(i_po)
+    return Turnpoint_array,len(Turnpoint_array)
+
+Turn_point,Cycle_number=Turnpoint()
+
+Cycle_I=[]
+Cycle_E=[]
+Q_Charge=[]
+Q_Discharge=[]
+Q_total=[]
+C_I=[]
+C_E=[]
+Q_t=[]
+
+#分圈
+for i in range(Cycle_number-1):
+    C_I=np.split(I_mA,[Turn_point[i],Turn_point[i+1]])
+    C_E=np.split(E_V,[Turn_point[i],Turn_point[i+1]])
+    Q_t=np.trapz(C_I[1].T,C_E[1].T)
+    Cycle_I.append(C_I[1])
+    Cycle_E.append(C_E[1])
+    Q_total.append(Q_t[0])
+
+    for i_ne in range (Turn_point[i],Turn_point[i+1]):
+        if I_mA[i_ne]<=0.0 and I_mA[i_ne+1]>0.0:
+
+            b1=np.split(I_mA,[Turn_point[i],i_ne])
+            c1=np.split(E_V,[Turn_point[i],i_ne])
+            Q_d=np.trapz(b1[1].T,c1[1].T)
+            Q_Discharge.append(Q_d[0])
+
+            b2=np.split(I_mA,[i_ne,Turn_point[i+1]])
+            c2=np.split(E_V,[i_ne,Turn_point[i+1]])
+            Q_c=np.trapz(b2[1].T,c2[1].T)
+            Q_Charge.append(Q_c[0])
+
+E_max,E_min,Voltage_window=Voltage_window() #电压窗口
+
+print ('E_max',E_max, 'V' ,'\n','E_min', E_min, 'V', '\n','Voltage_window',Voltage_window,'V' )
+print ('Cycle number:', Cycle_number-1) #起始半圈不算
+print ('Q_Discharge',Q_Discharge) #单位mC
+print ('Q_Charge',Q_Charge) #单位mC
