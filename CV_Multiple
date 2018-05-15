@@ -7,11 +7,41 @@ import csv
 from scipy import integrate
 import matplotlib
 import matplotlib.pyplot as plt
+from time import time
+from operator import itemgetter
+import re
 
 # input data
 data=pd.read_csv('EISML/CVdata/CVdata_csv/500-5mv.csv',sep=';')
 I_mA=data['<I>/mA'][:,np.newaxis]
 E_V=data['Ewe/V'][:,np.newaxis]
+
+#input scan rate
+S1=500
+SN1=5
+SR1=S1*np.ones(SN1)
+S2=200
+SN2=5
+SR2=S2*np.ones(SN2)
+S3=100
+SN3=5
+SR3=S3*np.ones(SN3)
+S4=50
+SN4=5
+SR4=S4*np.ones(SN4)
+S5=20
+SN5=5
+SR5=S5*np.ones(SN5)
+S6=10
+SN6=5
+SR6=S6*np.ones(SN6)
+S7=5
+SN7=3
+SR7=S7*np.ones(SN7)
+
+Scan_rate=np.hstack((SR1,SR2,SR3,SR4,SR5,SR6,SR7)).tolist()
+# 先做一个array，之后reshape，之后tolist()
+# Scan_rate.tolist()
 
 #画出所有CV
 def CV_plot_all():
@@ -30,7 +60,7 @@ def Turnpoint():
     for i_po in range (len(I_mA)-1):
         if I_mA[i_po]>=0.0 and I_mA[i_po+1]<0.0: #正拐点
             Turnpoint_array.append(i_po)
-    return Turnpoint_array,len(Turnpoint_array)
+    return Turnpoint_array,len(Turnpoint_array)-1
 
 Turn_point,Cycle_number=Turnpoint()
 
@@ -44,7 +74,7 @@ C_E=[]
 Q_t=[]
 
 #分圈
-for i in range(Cycle_number-1):
+for i in range(Cycle_number):
     C_I=np.split(I_mA,[Turn_point[i],Turn_point[i+1]])
     C_E=np.split(E_V,[Turn_point[i],Turn_point[i+1]])
     Q_t=np.trapz(C_I[1].T,C_E[1].T)
@@ -68,6 +98,15 @@ for i in range(Cycle_number-1):
 E_max,E_min,Voltage_window=Voltage_window() #电压窗口
 
 print ('E_max',E_max, 'V' ,'\n','E_min', E_min, 'V', '\n','Voltage_window',Voltage_window,'V' )
-print ('Cycle number:', Cycle_number-1) #起始半圈不算
+print ('Cycle number:', Cycle_number) #起始半圈不算
 print ('Q_Discharge',Q_Discharge) #单位mC
 print ('Q_Charge',Q_Charge) #单位mC
+
+#圈数序号
+Cycle = np.arange(1,Cycle_number+1,dtype = int).tolist()
+
+#写入csv
+save_data = {'01Cycle number': Cycle,'02Scan_rate':Scan_rate, '03E_max':E_max, '04E_min': E_min, '05Voltage_window': Voltage_window, '06Q_Charge': Q_Charge,'07Q_Discharge': Q_Discharge, }
+save_csv = pd.DataFrame(data=save_data)
+# save_csv = pd.DataFrame(Q_Discharge, columns=['Q_Discharge'])
+save_csv.to_csv('EISML/Result/500-5mv-result.csv',index=False)
