@@ -1,4 +1,7 @@
 # 功能预期：一个CV的txt文件，直接扔进程序，自动计算出“电压窗口，圈数，Q充，Q放, Capacitance”
+# Charge有问题！！
+#窗口化，函数化
+
 import numpy as np
 import pandas as pd
 import sklearn as sk
@@ -12,11 +15,13 @@ from operator import itemgetter
 import re
 
 # input data
-data=pd.read_csv('EISML/CVdata/CVdata_csv/500-5mv.csv',sep=';')
-I_mA=data['<I>/mA'][:,np.newaxis]
-E_V=data['Ewe/V'][:,np.newaxis]
+def input_data(input_path):
+    data=pd.read_csv(input_path,sep=';')
+    I_mA=data['<I>/mA'][:,np.newaxis]
+    E_V=data['Ewe/V'][:,np.newaxis]
+    return I_mA, E_V
 
-#input scan rate
+#input scan rate简化
 S1=500
 SN1=5
 SR1=S1*np.ones(SN1)
@@ -40,8 +45,6 @@ SN7=3
 SR7=S7*np.ones(SN7)
 
 Scan_rate=np.hstack((SR1,SR2,SR3,SR4,SR5,SR6,SR7)).tolist()
-# 先做一个array，之后reshape，之后tolist()
-# Scan_rate.tolist()
 
 #画出所有CV
 def CV_plot_all():
@@ -49,64 +52,66 @@ def CV_plot_all():
     ax.plot(E_V,I_mA)
     plt.show()
 
+#圈数
+def Count_cycle():
+    Count_cycle=0
+    for e_po in range (len(E_V)-1):
+        if E_V[e_po]<=E_V[0] and E_V[e_po+1]>E_V[0]:
+            Count_cycle+=1
+    return Count_cycle
+
 #voltage window
 def Voltage_window():
     Voltage_window=np.max(E_V)-np.min(E_V) #计算电压窗口
     return round(np.max(E_V),1), round(np.min(E_V),1),round(Voltage_window,1)  #打印电压窗口，并保留3位小数
 
-#圈数和正拐点
+# 正拐点
 def Turnpoint():
     Turnpoint_array=[]
     for i_po in range (len(I_mA)-1):
         if I_mA[i_po]>=0.0 and I_mA[i_po+1]<0.0: #正拐点
             Turnpoint_array.append(i_po)
-    return Turnpoint_array,len(Turnpoint_array)-1
+    return Turnpoint_array, len(Turnpoint_array)
 
-Turn_point,Cycle_number=Turnpoint()
+#求每圈Discharge电量Q
+def Discharge():
+    Q_Discharge=[]
+    for i in range(Turnpoint_num-1):
+        for i_ne in range (Turn_point[i],Turn_point[i+1]):
+            if I_mA[i_ne]<=0.0 and I_mA[i_ne+1]>0.0:
+                b1=np.split(I_mA,[Turn_point[i],i_ne])
+                c1=np.split(E_V,[Turn_point[i],i_ne])
+                Q_d=np.trapz(b1[1].T,c1[1].T)
+                Q_Discharge.append(Q_d[0])
 
-Cycle_I=[]
-Cycle_E=[]
-Q_Charge=[]
-Q_Discharge=[]
-Q_total=[]
-C_I=[]
-C_E=[]
-Q_t=[]
+    for i_final in range (Turn_point[Turnpoint_num-1],len(I_mA)):
+        if I_mA[i_final]<=0.0 and I_mA[i_final+1]>0.0:
+            C_I_final=np.split(I_mA,[Turn_point[Turnpoint_num-1],i_final])
+            C_E_final=np.split(E_V,[Turn_point[Turnpoint_num-1],i_final])
+            Q_d_final=np.trapz(C_I_final[1].T,C_E_final[1].T)
+            Q_Discharge.append(Q_d_final[0])
 
-#分圈
-for i in range(Cycle_number):
-    C_I=np.split(I_mA,[Turn_point[i],Turn_point[i+1]])
-    C_E=np.split(E_V,[Turn_point[i],Turn_point[i+1]])
-    Q_t=np.trapz(C_I[1].T,C_E[1].T)
-    Cycle_I.append(C_I[1])
-    Cycle_E.append(C_E[1])
-    Q_total.append(Q_t[0])
+    return Q_Discharge
 
-    for i_ne in range (Turn_point[i],Turn_point[i+1]):
-        if I_mA[i_ne]<=0.0 and I_mA[i_ne+1]>0.0:
 
-            b1=np.split(I_mA,[Turn_point[i],i_ne])
-            c1=np.split(E_V,[Turn_point[i],i_ne])
-            Q_d=np.trapz(b1[1].T,c1[1].T)
-            Q_Discharge.append(Q_d[0])
+#求每圈Charge电量Q！！！！！！！左一半右一半
 
-            b2=np.split(I_mA,[i_ne,Turn_point[i+1]])
-            c2=np.split(E_V,[i_ne,Turn_point[i+1]])
-            Q_c=np.trapz(b2[1].T,c2[1].T)
-            Q_Charge.append(Q_c[0])
 
+#输出到csv
+def write_csv(path):
+    #圈数序号
+    Cycle = np.arange(1,Cycle_number+1,dtype = int).tolist()
+    #写入csv
+    save_data = {'01Cycle number': Cycle,'03E_max':E_max, '04E_min': E_min, '05Voltage_window': Voltage_window, '07Q_Discharge': Q_Discharge}
+    # save_data = {'01Cycle number': Cycle,'02Scan_rate':Scan_rate, , '08Eoc': E_V[0]}
+    save_csv = pd.DataFrame(data=save_data)
+    save_csv.to_csv(path,index=False)
+
+
+#以下部分没有问题
+I_mA, E_V=input_data('EISML/CVdata/CVdata_csv/500-5mv.csv')   #输入数据
 E_max,E_min,Voltage_window=Voltage_window() #电压窗口
-
-print ('E_max',E_max, 'V' ,'\n','E_min', E_min, 'V', '\n','Voltage_window',Voltage_window,'V' )
-print ('Cycle number:', Cycle_number) #起始半圈不算
-print ('Q_Discharge',Q_Discharge) #单位mC
-print ('Q_Charge',Q_Charge) #单位mC
-
-#圈数序号
-Cycle = np.arange(1,Cycle_number+1,dtype = int).tolist()
-
-#写入csv
-save_data = {'01Cycle number': Cycle,'02Scan_rate':Scan_rate, '03E_max':E_max, '04E_min': E_min, '05Voltage_window': Voltage_window, '06Q_Charge': Q_Charge,'07Q_Discharge': Q_Discharge, }
-save_csv = pd.DataFrame(data=save_data)
-# save_csv = pd.DataFrame(Q_Discharge, columns=['Q_Discharge'])
-save_csv.to_csv('EISML/Result/500-5mv-result.csv',index=False)
+Cycle_number=Count_cycle() #计算圈数
+Turn_point,Turnpoint_num=Turnpoint() #计算拐点
+Q_Discharge=Discharge() #计算每圈放电电量
+write_csv('EISML/Result/500-5mv-result.csv') #结果保存路径
