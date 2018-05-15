@@ -1,6 +1,5 @@
-# 功能预期：一个CV的txt文件，直接扔进程序，自动计算出“电压窗口，圈数，Q充，Q放, Capacitance”
-# Charge有问题！！
-#窗口化，函数化
+# 功能预期：一个CV的txt文件，直接扔进程序，自动计算出每圈的Capacitance
+# 窗口化
 
 import numpy as np
 import pandas as pd
@@ -21,30 +20,16 @@ def input_data(input_path):
     E_V=data['Ewe/V'][:,np.newaxis]
     return I_mA, E_V
 
-#input scan rate简化
-S1=500
-SN1=5
-SR1=S1*np.ones(SN1)
-S2=200
-SN2=5
-SR2=S2*np.ones(SN2)
-S3=100
-SN3=5
-SR3=S3*np.ones(SN3)
-S4=50
-SN4=5
-SR4=S4*np.ones(SN4)
-S5=20
-SN5=5
-SR5=S5*np.ones(SN5)
-S6=10
-SN6=5
-SR6=S6*np.ones(SN6)
-S7=5
-SN7=3
-SR7=S7*np.ones(SN7)
-
-Scan_rate=np.hstack((SR1,SR2,SR3,SR4,SR5,SR6,SR7)).tolist()
+#设置Scan rate参数
+def Scan_rate_set(Scan_rate_parameters):
+    SRN=()
+    SRN1=()
+    Scan_rate=[]
+    for i in range (len(Scan_rate_parameters)):
+        SRN=Scan_rate_parameters[i][0]*np.ones(Scan_rate_parameters[i][1])
+        SRN1=np.hstack((SRN1,SRN))
+    Scan_rate=SRN1.tolist()
+    return Scan_rate
 
 #画出所有CV
 def CV_plot_all():
@@ -82,36 +67,59 @@ def Discharge():
                 b1=np.split(I_mA,[Turn_point[i],i_ne])
                 c1=np.split(E_V,[Turn_point[i],i_ne])
                 Q_d=np.trapz(b1[1].T,c1[1].T)
-                Q_Discharge.append(Q_d[0])
+                Q_Discharge.append(Q_d[0]/Scan_rate[i])
 
     for i_final in range (Turn_point[Turnpoint_num-1],len(I_mA)):
         if I_mA[i_final]<=0.0 and I_mA[i_final+1]>0.0:
             C_I_final=np.split(I_mA,[Turn_point[Turnpoint_num-1],i_final])
             C_E_final=np.split(E_V,[Turn_point[Turnpoint_num-1],i_final])
             Q_d_final=np.trapz(C_I_final[1].T,C_E_final[1].T)
-            Q_Discharge.append(Q_d_final[0])
+            Q_Discharge.append(Q_d_final[0]/Scan_rate[Turnpoint_num-1])
 
     return Q_Discharge
 
+#***求每圈Charge电量Q***需要左一半加右一半
 
-#求每圈Charge电量Q！！！！！！！左一半右一半
-
+#计算Capacitance
+def Cal_Capacitance(Mass):
+    Capacitance=[]
+    Specific_Cap=[]
+    cap=0
+    for i in range(len(Scan_rate)):
+        cap=Q_Discharge[i]*1000/Voltage
+        Capacitance.append(cap)
+        Specific_Cap.append(cap/Mass)
+    return Capacitance,Specific_Cap
 
 #输出到csv
 def write_csv(path):
     #圈数序号
     Cycle = np.arange(1,Cycle_number+1,dtype = int).tolist()
     #写入csv
-    save_data = {'01Cycle number': Cycle,'03E_max':E_max, '04E_min': E_min, '05Voltage_window': Voltage_window, '07Q_Discharge': Q_Discharge}
-    # save_data = {'01Cycle number': Cycle,'02Scan_rate':Scan_rate, , '08Eoc': E_V[0]}
+    save_data = {'01Cycle number': Cycle,
+                 '02Scan_rate(mV/s)':Scan_rate,
+                 '03E_max(V)':E_max,
+                 '04E_min(V)': E_min,
+                 '05Voltage_window(V)': Voltage,
+                 '06Q_Discharge(C)': Q_Discharge,
+                 '07Capacitance(mF)': Capacitance,
+                 '08Specific Capacitance(F/g)': Specific_Cap}
     save_csv = pd.DataFrame(data=save_data)
     save_csv.to_csv(path,index=False)
 
 
-#以下部分没有问题
+#需要设置输入目录，Mass，Scan_rate
 I_mA, E_V=input_data('EISML/CVdata/CVdata_csv/500-5mv.csv')   #输入数据
-E_max,E_min,Voltage_window=Voltage_window() #电压窗口
+Mass=0.4 #单位mg
+Scan_rate_parameters=[(500,5),(200,5),(100,5),(50,5),(20,5),(10,5),(5,4)] #小括号中，前数是扫描速率mV/s，后数是圈数
+
+# 运行
+Scan_rate=Scan_rate_set(Scan_rate_parameters) #设置Scan_rate
+E_max,E_min,Voltage=Voltage_window() #电压窗口
 Cycle_number=Count_cycle() #计算圈数
 Turn_point,Turnpoint_num=Turnpoint() #计算拐点
 Q_Discharge=Discharge() #计算每圈放电电量
+Capacitance, Specific_Cap=Cal_Capacitance(Mass) #Capacitance单位mF,Specific_Cap单位F/g
+
+#结果输出
 write_csv('EISML/Result/500-5mv-result.csv') #结果保存路径
